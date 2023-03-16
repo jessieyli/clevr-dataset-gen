@@ -191,6 +191,7 @@ def answer_question(question, metadata, scene_struct, all_outputs=False,
   (such as during question-generation DFS). This will NOT work if the same
   nodes are executed on different scenes.
   """
+  # print(question)
   all_input_types, all_output_types = [], []
   node_outputs = []
   for node in question['nodes']:
@@ -202,6 +203,7 @@ def answer_question(question, metadata, scene_struct, all_outputs=False,
       assert node_type in execute_handlers, msg
       handler = execute_handlers[node_type]
       node_inputs = [node_outputs[idx] for idx in node['inputs']]
+      # rewrite this as value_inputs because the public release is different.... 
       side_inputs = node.get('side_inputs', [])
       node_output = handler(scene_struct, node_inputs, side_inputs)
       if cache_outputs:
