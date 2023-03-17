@@ -35,8 +35,53 @@ TEMPLATE_ORDER = [
     'zero_hop.json',
 ]
 
+def generate_text(question, family_index_to_template, synonyms):
+    # if there is a relate, then it is of a different type
+    # filters and a count
+    # filters, relate, and a count
+    param_type_to_name = {'size':'<Z>', 'color':'<C>', 'material': '<M>', 'shape': '<S>', 'relate': '<R>'}
+    param_type_to_name2 = {'size':'<Z2>', 'color':'<C2>', 'material': '<M2>', 'shape': '<S2>'}
+    
+    node_types = [node['type'] for node in question]
+    # choose correct template
+    if 'relate' in node_types and 'count' in node_types:
+        template = family_index_to_template[72]
+    elif 'count' in node_types:
+        template = family_index_to_template[84]
 
-def generate_text(template, params, synonyms):
+    # create list of params
+    params = {}
+    for p in template['params']:
+        if p['type'] == 'Shape':
+            params[p['name']] = 'thing'
+        else:
+            params[p['name']] = ''
+    
+    # fill out list of params
+    relate = False
+    for node in question:
+        if node['side_inputs']:
+            param_type = node['type'].split('_')
+            if param_type[0] == 'relate':
+                relate = True
+                params[param_type_to_name[param_type[0]]] = node['side_inputs'][0]
+            if param_type[0] == 'filter':
+                if relate:
+                    params[param_type_to_name2[param_type[1]]] = node['side_inputs'][0]
+                else:
+                    params[param_type_to_name[param_type[1]]] = node['side_inputs'][0]
+
+    # use params to fill out template text
+    text = random.choice(template['text'])
+    for name, val in params.items():
+        if val in synonyms:
+            val = random.choice(synonyms[val])
+        if name == '<S>' and val == '':
+            val = 'object'
+        text = text.replace(name, val)
+        text = ' '.join(text.split())
+
+    return text 
     vals = {}
     for p in params:
         vals[params[p][0]] = params[p][1]
@@ -71,36 +116,39 @@ def create_subq(q, all_scenes, family_index_to_template, synonyms, metadata):
     nodes = copy.deepcopy(q['program'])
     #TODO: load params
     # params = [{'type': 'Size', 'name': '<Z>'}, {'type': 'Color', 'name': '<C>'}, {'type': 'Material', 'name': '<M>'}, {'type': 'Shape', 'name': '<S>'}]
-    vals = {'size':['<Z>',""], 'color':['<C>', ""], 'material': ['<M>',""], 'shape': ['<S>',""]}
+
     for i in nodes:
+        # take out the '_output' key
+        i.pop('_output', None)
+
         if i['type'] == 'scene':
             if curr_subq:
                 subqs.append([curr_subq, vals])
             curr_subq = []
             curr_num  = 0
-            vals = {'size':['<Z>',""], 'color':['<C>', ""], 'material': ['<M>',""], 'shape': ['<S>',""]}
             curr_subq.append(i)
         elif i['type'] in ['greater_than', 'less_than', 'equal_integer']:
             if curr_subq:
                 subqs.append([curr_subq, vals])
             break
         else:
-            i['inputs'] = [curr_num]
-            param_type = i['type'].split('_')
-            if param_type[0] =='filter':
-                vals[param_type[1]][1] = i['side_inputs'][0]
+            i['inputs'] = [curr_num]   
             curr_subq.append(i)
             curr_num += 1
     
     for i, subq in enumerate(subqs):
         question = subq[0]
         vals = subq[1]
-        text = generate_text(family_index_to_template[84], vals, synonyms)
         # print(text)
+        # print(question)
         answer = qeng.answer_question({'nodes':question}, metadata, test_scene_struct)
+        # print(answer)
+        text = generate_text(question, family_index_to_template, synonyms)
+        # text = generate_text(family_index_to_template[84], vals, synonyms)
         new_subq = {'program':question, 'answer':answer, 'question':text}
         print(text, answer)
         # test_q['sub_questions'].append({})
+    return text, answer
 
 def main(args):
     # Load templates so we can extract family_index_to_template mapping
@@ -139,82 +187,25 @@ def main(args):
 
         scene_struct = scene
 
-    and_qs = []
-    subqs = []
     subq_count = 0
     with open('/Users/jessie/code/research/CLEVR_v1.0/questions/CLEVR_val_questions.json', 'rb') as f:
         for q in ijson.items(f, 'questions.item'):
             qfi = q['question_family_index']
-            # if qfi == 76:
-            #     print("one hop!")
+            if qfi == 31:
+                print(q['question'])
+                print(q['program'])
+                break
+            # if 0 <= qfi <= 8:
             #     print(q)
-            #     break
-            # if 31 <= qfi <= 35:
-            #     print("simple and")
-            if 0 <= qfi <= 2:
-                print("compare_integer")
-                print(q)
-                template = family_index_to_template[qfi]
-                print()
-                # print(template)
-                # for t in template['text']:
-                #     print(t)
-                # print()
-                # print(template['nodes'])
-                # convert p in programs to 'type' instead of 'function'...
-                programs = q['program']
-                for p in programs:
-                    p['type'] = p.pop('function')
-                    p['side_inputs'] = p.pop('value_inputs')
-                    
-                create_subq(q, all_scenes, family_index_to_template, synonyms, metadata)
-                subq_count += 1
-                # test_q = {'nodes':q['program']}
-                
-                # curr_subq = []
-                # curr_num = 0
-                # nodes = copy.deepcopy(q['program'])
-                # #TODO: load params
-                # params = [{'type': 'Size', 'name': '<Z>'}, {'type': 'Color', 'name': '<C>'}, {'type': 'Material', 'name': '<M>'}, {'type': 'Shape', 'name': '<S>'}]
-                
-                # vals = {'size':['<Z>',""], 'color':['<C>', ""], 'material': ['<M>',""], 'shape': ['<S>',""]}
-                # for i in nodes:
-                #     if i['type'] == 'scene':
-                #         if curr_subq:
-                #             subqs.append([curr_subq, vals])
-                #         curr_subq = []
-                #         curr_num  = 0
-                #         vals = {'size':['<Z>',""], 'color':['<C>', ""], 'material': ['<M>',""], 'shape': ['<S>',""]}
-                #         curr_subq.append(i)
-                #     elif i['type'] in ['greater_than', 'less_than', 'equal_integer']:
-                #         if curr_subq:
-                #             subqs.append([curr_subq, vals])
-                #         break
-                #     else:
-                #         i['inputs'] = [curr_num]
-                #         param_type = i['type'].split('_')
-                #         if param_type[0] =='filter':
-                #             vals[param_type[1]][1] = i['side_inputs'][0]
-                #         curr_subq.append(i)
-                #         curr_num += 1
-                
-                # print(qeng.answer_question())
-                # break
-                # and_qs.append(q)
-    # print(test_q)
-    # # print(subqs)
-    # print(qeng.answer_question(test_q, metadata, test_scene_struct))
-    # test_q['sub_questions'] = []
-    # for i, subq in enumerate(subqs):
-    #     question = subq[0]
-    #     vals = subq[1]
-    #     text = generate_text(family_index_to_template[84], vals, synonyms)
-    #     print(text)
-    #     answer = qeng.answer_question({'nodes':question}, metadata, test_scene_struct)
-    #     print(f"sub-q {i}: {answer}")
-    #     test_q['sub_questions'].append({})
-    # 8451
-    # print(len(and_qs))
+            #     programs = q['program']
+            #     for p in programs:
+            #         p['type'] = p.pop('function')
+            #         p['side_inputs'] = p.pop('value_inputs')
+            #     print(q['question'])
+            #     qtext, answer = create_subq(q, all_scenes, family_index_to_template, synonyms, metadata)
+            #     subq_count += 1
+
+            
     print(subq_count)
 
 
