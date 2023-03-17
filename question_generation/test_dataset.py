@@ -22,6 +22,10 @@ parser.add_argument('--input_scene_file', default='/Users/jessie/code/research/C
          "from render_images.py")
 parser.add_argument('--synonyms_json', default='synonyms.json',
     help="JSON file defining synonyms for parameter values")
+# Output
+parser.add_argument('--output_questions_file',
+    default='../output/CLEVR_questions.json',
+    help="The output file to write containing generated questions")
 
 TEMPLATE_ORDER = [
     'compare_integer.json',
@@ -102,7 +106,7 @@ def generate_text(question, family_index_to_template, synonyms):
 
     return text
 
-def create_subq(q, all_scenes, family_index_to_template, synonyms, metadata):
+def create_subq(q, all_scenes, family_index_to_template, qfi, synonyms, metadata):
     image_filename = q['image_filename']
     # TODO: find scene
     for i, scene in enumerate(all_scenes):
@@ -117,38 +121,59 @@ def create_subq(q, all_scenes, family_index_to_template, synonyms, metadata):
     #TODO: load params
     # params = [{'type': 'Size', 'name': '<Z>'}, {'type': 'Color', 'name': '<C>'}, {'type': 'Material', 'name': '<M>'}, {'type': 'Shape', 'name': '<S>'}]
 
-    for i in nodes:
-        # take out the '_output' key
-        i.pop('_output', None)
 
-        if i['type'] == 'scene':
-            if curr_subq:
-                subqs.append([curr_subq, vals])
-            curr_subq = []
-            curr_num  = 0
-            curr_subq.append(i)
-        elif i['type'] in ['greater_than', 'less_than', 'equal_integer']:
-            if curr_subq:
-                subqs.append([curr_subq, vals])
-            break
-        else:
-            i['inputs'] = [curr_num]   
-            curr_subq.append(i)
-            curr_num += 1
-    
+    # if qfi 0-8
+    if 0 <= qfi <=8: 
+        for i in nodes:
+            if i['type'] == 'scene':
+                if curr_subq:
+                    subqs.append(curr_subq)
+                curr_subq = []
+                curr_num  = 0
+                curr_subq.append(i)
+            elif i['type'] in ['greater_than', 'less_than', 'equal_integer']:
+                if curr_subq:
+                    subqs.append(curr_subq)
+                break
+            else:
+                i['inputs'] = [curr_num]   
+                curr_subq.append(i)
+                curr_num += 1
+    elif qfi == 31 or 64 <=qfi<=71:
+        for i in nodes:
+            if i['type'] == 'scene':
+                if curr_subq:
+                    subqs.append(curr_subq)
+                curr_subq = []
+                curr_num  = 0
+                curr_subq.append(i)
+            elif i['type'] in ['intersect', 'union']:
+                if curr_subq:
+                    subqs.append(curr_subq)
+                resume_ind = nodes.index(i)
+                break
+            else:
+                i['inputs'] = [curr_num]   
+                curr_subq.append(i)
+                curr_num += 1
+        for subq in subqs:
+            for i in nodes[resume_ind+1:]:
+                new_node = copy.deepcopy(i)
+                new_node['inputs'] = [len(subq)-1]
+                subq.append(new_node)
+        
+    return_subqs = []
     for i, subq in enumerate(subqs):
-        question = subq[0]
-        vals = subq[1]
-        # print(text)
+        question = subq
         # print(question)
         answer = qeng.answer_question({'nodes':question}, metadata, test_scene_struct)
         # print(answer)
         text = generate_text(question, family_index_to_template, synonyms)
-        # text = generate_text(family_index_to_template[84], vals, synonyms)
         new_subq = {'program':question, 'answer':answer, 'question':text}
         print(text, answer)
         # test_q['sub_questions'].append({})
-    return text, answer
+        return_subqs.append({'question':text, 'answer':answer})
+    return return_subqs
 
 def main(args):
     # Load templates so we can extract family_index_to_template mapping
@@ -188,25 +213,38 @@ def main(args):
         scene_struct = scene
 
     subq_count = 0
+    questions = []
     with open('/Users/jessie/code/research/CLEVR_v1.0/questions/CLEVR_val_questions.json', 'rb') as f:
         for q in ijson.items(f, 'questions.item'):
             qfi = q['question_family_index']
-            if qfi == 31:
+            if qfi == 31 or 64 <=qfi<=71:
+                programs = q['program']
+                for p in programs:
+                    p['type'] = p.pop('function')
+                    p['side_inputs'] = p.pop('value_inputs')
                 print(q['question'])
-                print(q['program'])
-                break
-            # if 0 <= qfi <= 8:
-            #     print(q)
-            #     programs = q['program']
-            #     for p in programs:
-            #         p['type'] = p.pop('function')
-            #         p['side_inputs'] = p.pop('value_inputs')
-            #     print(q['question'])
-            #     qtext, answer = create_subq(q, all_scenes, family_index_to_template, synonyms, metadata)
-            #     subq_count += 1
+                q['subquestions'] = create_subq(q, all_scenes, family_index_to_template, qfi, synonyms, metadata)
+                questions.append(q)
+                subq_count += 1
+            elif 0 <= qfi <= 8:
+                print(q)
+                programs = q['program']
+                for p in programs:
+                    p['type'] = p.pop('function')
+                    p['side_inputs'] = p.pop('value_inputs')
+                print(q['question'])
+                q['subquestions'] = create_subq(q, all_scenes, family_index_to_template, qfi, synonyms, metadata)
+                questions.append(q)
+                subq_count += 1
 
             
     print(subq_count)
+    with open(args.output_questions_file, 'w') as f:
+        print('Writing output to %s' % args.output_questions_file)
+        json.dump({
+            'info': scene_info,
+            'questions': questions,
+        }, f)
 
 
 if __name__ == '__main__':
