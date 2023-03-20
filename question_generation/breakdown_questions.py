@@ -14,9 +14,6 @@ parser.add_argument('--template_dir', default='CLEVR_1.0_templates/')
 parser.add_argument('--num_samples', type=int, default=5)
 parser.add_argument('--metadata_file', default='metadata.json',
     help="JSON file containing metadata about functions")
-# parser.add_argument('--input_scene_file', default='../output/CLEVR_scenes.json',
-#     help="JSON file containing ground-truth scene information for all images " +
-#          "from render_images.py")
 parser.add_argument('--input_scene_file', default='/Users/jessie/code/research/CLEVR_v1.0/scenes/CLEVR_val_scenes.json',
     help="JSON file containing ground-truth scene information for all images " +
          "from render_images.py")
@@ -110,7 +107,7 @@ def generate_text(question, family_index_to_template, synonyms):
 
 def create_subq(q, all_scenes, family_index_to_template, qfi, synonyms, metadata):
     image_filename = q['image_filename']
-    # TODO: find scene
+    # find scene
     for i, scene in enumerate(all_scenes):
         scene_fn = scene['image_filename']
         if scene_fn == image_filename:
@@ -120,11 +117,9 @@ def create_subq(q, all_scenes, family_index_to_template, qfi, synonyms, metadata
     curr_subq = []
     curr_num = 0
     nodes = copy.deepcopy(q['program'])
-    #TODO: load params
-    # params = [{'type': 'Size', 'name': '<Z>'}, {'type': 'Color', 'name': '<C>'}, {'type': 'Material', 'name': '<M>'}, {'type': 'Shape', 'name': '<S>'}]
 
     new_inds = []
-    # if qfi 0-8
+    # qfi 0-8 from compare_integer.json, 9-24 from compare_integer.json
     if 0 <= qfi <=24: 
         for i in nodes:
             if i['type'] == 'scene':
@@ -169,7 +164,6 @@ def create_subq(q, all_scenes, family_index_to_template, qfi, synonyms, metadata
         text = generate_text(question, family_index_to_template, synonyms)
         new_subq = {'program':question, 'answer':answer, 'question':text}
         # print(text, answer)
-        # test_q['sub_questions'].append({})
         return_subqs.append({'question':text, 'answer':answer})
     return return_subqs
 
@@ -180,10 +174,7 @@ def main(args):
     family_index_to_template = {}
     for fn in TEMPLATE_ORDER:
         with open(os.path.join(args.template_dir, fn), 'r') as f:
-            base = os.path.splitext(fn)[0]
             for i, template in enumerate(json.load(f)):
-                # if fn == 'one_hop.json':
-                #     print(num_loaded_templates)
                 family_index_to_template[num_loaded_templates] = template
                 num_loaded_templates += 1
                 key = (fn, i)
@@ -196,19 +187,11 @@ def main(args):
     with open(args.synonyms_json, 'r') as f:
         synonyms = json.load(f)
 
-    # load test scene
+    # load scenes
     with open(args.input_scene_file, 'r') as f:
         scene_data = json.load(f)
         all_scenes = scene_data['scenes']
         scene_info = scene_data['info']
-
-    for i, scene in enumerate(all_scenes):
-        scene_fn = scene['image_filename']
-        if scene_fn == 'CLEVR_val_000010.png':
-            test_scene_struct = scene
-            break
-
-        scene_struct = scene
 
     subq_count = 0
     questions = []
