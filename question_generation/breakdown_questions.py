@@ -52,6 +52,27 @@ def generate_text(question, family_index_to_template, synonyms):
         template = family_index_to_template[72]
     elif 'count' in node_types:
         template = family_index_to_template[84]
+    elif 'query_shape' in node_types:
+        if 'relate' in node_types:
+            template = family_index_to_template[77]            
+        else:
+            template = family_index_to_template[86]
+    elif 'query_material' in node_types:
+        if 'relate' in node_types:
+            template = family_index_to_template[76]            
+        else:
+            template = family_index_to_template[87]
+    elif 'query_color' in node_types:
+        if 'relate' in node_types:
+            template = family_index_to_template[75]            
+        else:
+            template = family_index_to_template[88]
+    elif 'query_size' in node_types:
+        if 'relate' in node_types:
+            template = family_index_to_template[74]            
+        else:
+            template = family_index_to_template[89]
+
 
     # create list of params
     params = {}
@@ -86,25 +107,6 @@ def generate_text(question, family_index_to_template, synonyms):
         text = ' '.join(text.split())
 
     return text 
-    vals = {}
-    for p in params:
-        vals[params[p][0]] = params[p][1]
-    
-    text = random.choice(template['text'])
-    for name, val in vals.items():
-      if val in synonyms:
-        val = random.choice(synonyms[val])
-      if name == '<S>' and val == '':
-          val = 'object'
-      text = text.replace(name, val)
-      text = ' '.join(text.split())
-    
-    # text = replace_optionals(text)
-    # text = ' '.join(text.split())
-    # text = other_heuristic(text, state['vals'])
-    # text_questions.append(text)
-
-    return text
 
 def create_subq(q, all_scenes, family_index_to_template, qfi, synonyms, metadata):
     image_filename = q['image_filename']
@@ -121,24 +123,20 @@ def create_subq(q, all_scenes, family_index_to_template, qfi, synonyms, metadata
     #TODO: load params
     # params = [{'type': 'Size', 'name': '<Z>'}, {'type': 'Color', 'name': '<C>'}, {'type': 'Material', 'name': '<M>'}, {'type': 'Shape', 'name': '<S>'}]
 
-
+    new_inds = []
     # if qfi 0-8
-    if 0 <= qfi <=8: 
+    if 0 <= qfi <=24: 
         for i in nodes:
             if i['type'] == 'scene':
-                if curr_subq:
-                    subqs.append(curr_subq)
-                curr_subq = []
-                curr_num  = 0
-                curr_subq.append(i)
-            elif i['type'] in ['greater_than', 'less_than', 'equal_integer']:
-                if curr_subq:
-                    subqs.append(curr_subq)
+                new_inds.append((len(subqs), 0))
+                subqs.append([i])
+            elif i['type'] in ['equal_color', 'equal_size', 'equal_material', 'equal_shape', 'greater_than', 'less_than', 'equal_integer']:
                 break
             else:
-                i['inputs'] = [curr_num]   
-                curr_subq.append(i)
-                curr_num += 1
+                subq_id, input_new_ind = new_inds[i['inputs'][0]]
+                new_inds.append((subq_id, input_new_ind+1))
+                i['inputs'] = [input_new_ind] 
+                subqs[subq_id].append(i)
     elif qfi == 31 or 64 <=qfi<=71:
         for i in nodes:
             if i['type'] == 'scene':
@@ -170,7 +168,7 @@ def create_subq(q, all_scenes, family_index_to_template, qfi, synonyms, metadata
         # print(answer)
         text = generate_text(question, family_index_to_template, synonyms)
         new_subq = {'program':question, 'answer':answer, 'question':text}
-        print(text, answer)
+        # print(text, answer)
         # test_q['sub_questions'].append({})
         return_subqs.append({'question':text, 'answer':answer})
     return return_subqs
@@ -222,20 +220,25 @@ def main(args):
                 for p in programs:
                     p['type'] = p.pop('function')
                     p['side_inputs'] = p.pop('value_inputs')
-                print(q['question'])
+                # print(q['question'])
                 q['subquestions'] = create_subq(q, all_scenes, family_index_to_template, qfi, synonyms, metadata)
                 questions.append(q)
                 subq_count += 1
-            elif 0 <= qfi <= 8:
-                print(q)
+            elif 0 <= qfi <= 24:
+                # print(q)
                 programs = q['program']
                 for p in programs:
                     p['type'] = p.pop('function')
                     p['side_inputs'] = p.pop('value_inputs')
-                print(q['question'])
-                q['subquestions'] = create_subq(q, all_scenes, family_index_to_template, qfi, synonyms, metadata)
+                # print(q['question'])
+                subqs = create_subq(q, all_scenes, family_index_to_template, qfi, synonyms, metadata)
+                if not subqs:
+                    raise Exception("Question not decomposed properly")
+                q['subquestions'] = subqs
                 questions.append(q)
                 subq_count += 1
+            else:
+                questions.append(q)
 
             
     print(subq_count)
